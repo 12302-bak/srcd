@@ -283,11 +283,7 @@ __device__ static int wpa_try_pmk(const uint8_t pmk[32]) {
 
 #ifndef WPACRACK_CUDA_EMULATE
 /* Real CUDA: kernel launch + host glue (excluded from host emulation, which
- * only needs the device crypto above). nvcc compiles .cu as C++, so the host
- * interface needs C linkage for the C caller. */
-#ifdef __cplusplus
-extern "C" {
-#endif
+ * only needs the device crypto above). C linkage comes from crack.h. */
 
 __global__ static void wpa_kernel(uint64_t start, uint64_t count,
                                   int *found, char *found_pw) {
@@ -407,10 +403,6 @@ int gpu_worker_process(gpu_ctx *ctx, int device_index) {
     }
     return 0;
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #else /* WPACRACK_CUDA_EMULATE */
 

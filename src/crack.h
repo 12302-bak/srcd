@@ -40,7 +40,11 @@ void *gpu_worker_main(void *arg);   /* runs a CUDA device worker thread */
 void crack_stop(crack_state *st);   /* request all workers to stop      */
 uint64_t crack_progress(const crack_state *st, const worker *ws, int n);
 
-/* CUDA support (provided by cu/gpu_cuda.cu when built with nvcc, else stub). */
+/* CUDA support (provided by cu/gpu_cuda.cu when built with nvcc, else stub).
+ * Declared with C linkage: nvcc compiles .cu as C++, and the callers are C. */
+#ifdef __cplusplus
+extern "C" {
+#endif
 int  gpu_device_count(void);
 int  gpu_device_name(int idx, char *buf, size_t n);
 typedef struct gpu_ctx {
@@ -53,5 +57,8 @@ typedef struct gpu_ctx {
     char     pw[64];
 } gpu_ctx;
 int  gpu_worker_process(gpu_ctx *ctx, int device_index);
+#ifdef __cplusplus
+}
+#endif
 
 #endif

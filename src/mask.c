@@ -18,11 +18,10 @@ static const char *BUILTIN(char c) {
 }
 
 static const char *builtin(const char *name) {
-    /* Returns a static string for a builtin token, or NULL. */
-    if (strlen(name) == 1) return BUILTIN(name[0]);
-    if (strcmp(name, "?d") == 0) return "0123456789";
-    if (strcmp(name, "?l") == 0) return "abcdefghijklmnopqrstuvwxyz";
-    if (strcmp(name, "?u") == 0) return "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    /* Returns the character set for a builtin token ("?d", "?l", ... or the
+     * bare letter). The composed-expansion loop passes exactly 2-char tokens. */
+    if (name[1] == 0) return BUILTIN(name[0]);
+    if (name[0] == '?') return BUILTIN(name[1]);
     return NULL;
 }
 
@@ -33,8 +32,9 @@ static int resolve(mask_t *m, int pos, const char *tok,
     const char *set = NULL;
     if (ch >= '1' && ch <= '4') {
         int ci = ch - '1';
-        if (c[ci]) set = c[ci];
-        else if (cname[ci]) set = cname[ci];
+        /* Use the already-expanded form (mask_parse stores ?d?l as the full
+         * character set); the raw c[ci] would treat '?' and 'd' as literals. */
+        if (c[ci] || cname[ci]) set = m->custom[ci];
         else return -1;
     } else if (ch == 'b') {
         set = m->custom[0]; /* handled below for full byte range */
@@ -90,7 +90,8 @@ int mask_parse(mask_t *m, const char *mask,
                 const char *p = src;
                 while (*p) {
                     if (p[0] == '?' && p[1]) {
-                        const char *s = builtin(p);
+                        char tok[3] = { p[0], p[1], 0 };
+                        const char *s = builtin(tok);
                         if (s) {
                             size_t sl = strlen(s);
                             if (outlen + (int)sl < MASK_CHARSET_LEN) {

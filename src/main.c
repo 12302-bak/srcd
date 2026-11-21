@@ -25,7 +25,9 @@ static void usage(const char *prog) {
         "  --device <list>         cpu, gpu, all, or a mix e.g. 'cpu,gpu0,gpu1'\n"
         "                          (default: all available)\n"
         "  --threads <n>           CPU threads (default: number of cores)\n"
-        "  --1 .. --4 <charset>    custom charsets for ?1-?4 (e.g. '0123456789')\n"
+        "  -1 .. -4 <charset>    custom charsets for ?1-?4 (e.g. '0123456789');\n"
+        "                          composed tokens allowed, e.g. '?d?l' or '*!&'\n"
+        "                          (--1 .. --4 also accepted)\n"
         "  --increment <min-max>   incremental length, e.g. 4-8 (mask is one\n"
         "                          charset token such as '?d')\n"
         "  --chunk <n>             candidates per work unit (default 1000000)\n"
@@ -62,9 +64,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--increment") && i + 1 < argc) {
             if (sscanf(argv[++i], "%d-%d", &inc_min, &inc_max) != 2) { usage(argv[0]); return 2; }
         }
-        else if (!strncmp(argv[i], "--", 2) && strlen(argv[i]) == 3 &&
-                 argv[i][2] >= '1' && argv[i][2] <= '4' && i + 1 < argc) {
-            custom[argv[i][2] - '1'] = argv[i + 1];
+        else if (i + 1 < argc && argv[i][0] == '-' && argv[i][1] &&
+                 ((argv[i][1] == '-' && strlen(argv[i]) == 3 &&
+                   argv[i][2] >= '1' && argv[i][2] <= '4') ||
+                  (argv[i][1] != '-' && strlen(argv[i]) == 2 &&
+                   argv[i][1] >= '1' && argv[i][1] <= '4'))) {
+            const char *p = argv[i];
+            custom[(p[1] == '-' ? p[2] : p[1]) - '1'] = argv[i + 1];
             i++;
         }
         else { usage(argv[0]); return 2; }
@@ -128,25 +134,38 @@ int main(int argc, char **argv) {
     }
 
     int ngpu = gpu_device_count();
-    int use_cpu = 0, use_gpu = 0;
+    int use_cpu = 0;
+    int gpu_use[MAX_WORKERS] = {0};   /* per-GPU selection from --device */
     if (!strcmp(devstr, "cpu")) use_cpu = 1;
-    else if (!strcmp(devstr, "gpu")) use_gpu = 1;
-    else if (!strcmp(devstr, "all")) { use_cpu = 1; use_gpu = ngpu > 0; }
-    else {
+    else if (!strcmp(devstr, "gpu")) {
+        for (int g = 0; g < ngpu && g < MAX_WORKERS; g++) gpu_use[g] = 1;
+    } else if (!strcmp(devstr, "all")) {
+        use_cpu = 1;
+        for (int g = 0; g < ngpu && g < MAX_WORKERS; g++) gpu_use[g] = 1;
+    } else {
         /* "cpu,gpu0,gpu1" style */
         char buf[256];
         snprintf(buf, sizeof(buf), "%s", devstr);
         char *tok = strtok(buf, ",");
         while (tok) {
             if (!strcmp(tok, "cpu")) use_cpu = 1;
-            else if (!strncmp(tok, "gpu", 3)) use_gpu = 1;
+            else if (!strcmp(tok, "gpu")) {
+                for (int g = 0; g < ngpu && g < MAX_WORKERS; g++) gpu_use[g] = 1;
+            } else if (!strncmp(tok, "gpu", 3)) {
+                int g = atoi(tok + 3);
+                if (g >= 0 && g < ngpu && g < MAX_WORKERS) gpu_use[g] = 1;
+                else { fprintf(stderr, "error: no such GPU %d\n", g); return 1; }
+            } else { fprintf(stderr, "error: unknown device '%s'\n", tok); return 1; }
             tok = strtok(NULL, ",");
         }
     }
+    int use_gpu = 0;
+    for (int g = 0; g < ngpu && g < MAX_WORKERS; g++) if (gpu_use[g]) use_gpu = 1;
     if (!use_cpu && !use_gpu) { fprintf(stderr, "error: no device selected\n"); return 1; }
     if (use_gpu && ngpu == 0) {
         fprintf(stderr, "warning: no CUDA devices found; GPU disabled\n");
         use_gpu = 0;
+        for (int g = 0; g < MAX_WORKERS; g++) gpu_use[g] = 0;
     }
     if (use_gpu && mask.incremental) {
         /* The CUDA kernel is positional-only; incremental lengths need the
@@ -154,6 +173,7 @@ int main(int argc, char **argv) {
          * generating empty candidates on the GPU. */
         fprintf(stderr, "warning: incremental mask unsupported on GPU; GPU disabled\n");
         use_gpu = 0;
+        for (int g = 0; g < MAX_WORKERS; g++) gpu_use[g] = 0;
     }
 
     /* Build the worker table. */
@@ -182,6 +202,7 @@ int main(int argc, char **argv) {
         }
     }
     for (int g = 0; g < ngpu && nw < MAX_WORKERS; g++) {
+        if (!gpu_use[g]) continue;
         gpu_enabled[g] = 1;
         workers[nw].st = &st;
         workers[nw].kind = 1;
@@ -204,10 +225,16 @@ int main(int argc, char **argv) {
     printf("Target  : %s\n", cap.have_eapol ? "EAPOL 4-way handshake" : "PMKID");
     printf("Mask    : %s\n", maskstr);
     printf("Keyspace: %llu\n", (unsigned long long)mask.keyspace);
-    printf("Devices : ");
-    if (use_cpu) printf("%d CPU thread(s) ", threads);
-    if (use_gpu) printf("%d GPU(s)", ngpu);
-    printf("\n");
+    /* Devices actually running this job (what --device selected). */
+    char curdev[256] = "";
+    size_t cd = 0;
+    if (use_cpu) cd += (size_t)snprintf(curdev + cd, sizeof(curdev) - cd, "%d CPU thread(s)", threads);
+    for (int g = 0; g < ngpu && g < MAX_WORKERS; g++) {
+        if (!gpu_use[g]) continue;
+        if (cd) cd += (size_t)snprintf(curdev + cd, sizeof(curdev) - cd, ", ");
+        cd += (size_t)snprintf(curdev + cd, sizeof(curdev) - cd, "GPU%d", g);
+    }
+    printf("Current : %s\n", curdev);
     printf("Press c/g/1-9 to toggle devices, q to quit.\n");
 
     /* Spawn workers. */

@@ -54,10 +54,14 @@ make test
 # custom charset, e.g. a specific PIN pattern
 ./build/srcd --file handshake.pcap --mask '?1?1?1?1?1?1' --1 '0123456789'
 
-# use CPU and GPUs
+# custom charsets: ?1=?d?l (digits+lowercase), ?2=*!& ; single-dash -1..-4
+./build/srcd --file handshake.pcap --mask '?1?2?s' -1 '?d?l' -2 '*!&'
+
+# use CPU and GPUs (only the listed devices participate)
 ./build/srcd --file handshake.pcap --mask '?d?d?d?d?d?d?d?d' --device all
 ./build/srcd --file handshake.pcap --mask '?d?d?d?d?d?d?d?d' --device cpu
 ./build/srcd --file handshake.pcap --mask '?d?d?d?d?d?d?d?d' --device gpu
+./build/srcd --file handshake.pcap --mask '?d?d?d?d?d?d?d?d' --device 'cpu,gpu0,gpu1'
 
 # list available devices, then exit
 ./build/srcd --list-devices
@@ -92,7 +96,7 @@ both nonces, and the EAPOL-Key frame with its MIC (or the RSN-IE PMKID).
 
 ## Notes
 
-- WPA-PSK cracking is a **dual-use** technique. Only test networks you are
+- WPA-PSK calcing is a **dual-use** technique. Only test networks you are
   authorised to access.
 - The CUDA path (`cu/gpu_cuda.cu`) mirrors the verified host crypto. It is
   compiled only with `nvcc` and has not been run on real NVIDIA hardware here,

@@ -47,6 +47,15 @@ int main(void) {
         mask_candidate(&m, 26, buf); expect("c1 idx26", (uint64_t)strcmp(buf, "ccc"), 0);
     } else { printf("FAIL parse c1\n"); fail++; }
 
+    /* composed custom charset ?1=?d?l expands to digits+lowercase (36 chars) */
+    if (mask_parse(&m, "?1?2", "?d?l", "*!&", NULL, NULL, 0, 0) == 0) {
+        expect("c1 composed keyspace", m.keyspace, 36ULL * 3);
+        char buf[64];
+        mask_candidate(&m, 0, buf);    expect("comp idx0", (uint64_t)strcmp(buf, "0*"), 0);
+        mask_candidate(&m, 9, buf);    expect("comp idx9", (uint64_t)strcmp(buf, "3*"), 0);
+        mask_candidate(&m, 10, buf);   expect("comp idx10", (uint64_t)strcmp(buf, "3!"), 0);
+    } else { printf("FAIL parse composed\n"); fail++; }
+
     printf(fail ? "\n%d FAILURE(S)\n" : "\nall pass\n", fail);
     return fail ? 1 : 0;
 }

@@ -229,8 +229,8 @@ int main(int argc, char **argv) {
         fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
     }
 
-    uint64_t prev_done = 0;
     time_t prev_t = time(NULL);
+    time_t start_t = prev_t;     /* rate is measured over the whole run, not per tick */
     int running = 1;
 
     while (running) {
@@ -257,21 +257,23 @@ int main(int argc, char **argv) {
         /* Progress. */
         time_t now = time(NULL);
         if (now - prev_t >= status_sec) {
-            uint64_t rate = (done - prev_done) / (uint64_t)(now - prev_t);
+            /* Rate averaged over the whole run. Per-tick rates jump between 0
+             * and a real value with several devices, since a fast GPU finishes
+             * a whole chunk in one tick and idles the next; cumulative never dips. */
+            time_t elapsed = now - start_t;
+            uint64_t rate = elapsed > 0 ? done / (uint64_t)elapsed : 0;
             double pct = st.keyspace ? 100.0 * (double)done / (double)st.keyspace : 0.0;
 
             /* Estimated remaining time from the current rate. */
             uint64_t rem = st.keyspace > done ? st.keyspace - done : 0;
             uint64_t eta_s = rate ? rem / rate : 0;
             char etabuf[32];
-            if (eta_s >= 3600)
+            if (!rate)
+                snprintf(etabuf, sizeof(etabuf), "-");
+            else
                 snprintf(etabuf, sizeof(etabuf), "%llu:%02llu:%02llu",
                          (unsigned long long)(eta_s / 3600),
                          (unsigned long long)((eta_s % 3600) / 60),
-                         (unsigned long long)(eta_s % 60));
-            else
-                snprintf(etabuf, sizeof(etabuf), "%llu:%02llu",
-                         (unsigned long long)(eta_s / 60),
                          (unsigned long long)(eta_s % 60));
 
             /* Current key: the most advanced worker's candidate in flight. */
@@ -288,7 +290,6 @@ int main(int argc, char **argv) {
                        (unsigned long long)maxcur, curpw);
                 fflush(stdout);
             }
-            prev_done = done;
             prev_t = now;
         }
 

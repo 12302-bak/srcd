@@ -121,6 +121,8 @@ void *gpu_worker_main(void *arg) {
         uint64_t end = start + st->chunk;
         if (end > st->keyspace) end = st->keyspace;
 
+        w->cur = start; /* publish the frontier now; the kernel may run for seconds */
+
         gpu_ctx ctx;
         memset(&ctx, 0, sizeof(ctx));
         ctx.ssid = st->cap->ssid;

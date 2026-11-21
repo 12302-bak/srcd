@@ -104,7 +104,7 @@ static void parse_eapol_key(const uint8_t *eapol, size_t eapol_len,
     {
         uint16_t kdlen = (uint16_t)((b[93] << 8) | b[94]); /* network-order */
         const uint8_t *kd = b + 95;
-        if (93 + 2 + kdlen <= blen) {
+        if ((size_t)95 + kdlen <= blen) {
             parse_ies(kd, kdlen, cap);
             if (cap->have_pmkid && cap->pmkid_aa[0] == 0) {
                 memcpy(cap->pmkid_aa, aa, 6);

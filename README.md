@@ -27,6 +27,13 @@ cmake -B build -DENABLE_CUDA=ON && cmake --build build   # with CUDA
 All objects, dependency files and binaries land in `build/` (override with
 `make BUILD=out`); `make clean` removes it.
 
+If `make cuda` says `nvcc not found`, the CUDA toolkit is either missing or its
+`bin/` is not on `PATH` (common on Kaggle, where it sits in `/usr/local/cuda/bin`).
+The Makefile auto-probes the usual locations, but you can also point at it
+directly: `make cuda NVCC=/usr/local/cuda/bin/nvcc`. With no toolkit at all, the
+CPU binary still builds with plain `make`, and `make test` still validates the
+device crypto through host emulation.
+
 Run the unit tests (crypto against RFC 6070/2202/3174 vectors, WPA against a
 real capture, mask expansion, and the CUDA device crypto verified via host
 emulation):

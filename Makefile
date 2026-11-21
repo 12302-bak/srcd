@@ -14,6 +14,13 @@
 BUILD ?= build
 CC    ?= cc
 NVCC  ?= nvcc
+# CUDA is optional. Locate nvcc, falling back to common toolkit paths (Kaggle puts it in
+# /usr/local/cuda/bin, which is not always on PATH). Empty => `make cuda` tells you why.
+NVCC  := $(shell command -v $(NVCC) 2>/dev/null)
+ifeq ($(strip $(NVCC)),)
+NVCC  := $(shell for d in /usr/local/cuda/bin /usr/local/cuda-*/bin /opt/cuda/bin; do \
+            [ -x "$$d/nvcc" ] && echo "$$d/nvcc" && break; done)
+endif
 CFLAGS ?= -O2 -Wall -Wextra
 LDLIBS  := -lpthread
 
@@ -22,6 +29,8 @@ SRC := src/sha1.c src/crypto.c src/pcap.c src/wpa.c src/mask.c src/crack.c \
 OBJ := $(SRC:src/%.c=$(BUILD)/src/%.o)
 DEP := $(OBJ:.o=.d)               # automatic header dependencies
 CU_OBJ := $(BUILD)/cu/gpu_cuda.o
+# gpu_stub.c and gpu_cuda.o both define the gpu_* symbols: exactly one goes in each binary.
+CU_SRC := $(filter-out src/gpu_stub.c,$(SRC))
 
 all: $(BUILD)/srcd tests
 
@@ -65,10 +74,15 @@ test: tests
 cuda: CFLAGS += -DHAVE_CUDA
 cuda: $(BUILD)/srcd_cuda
 
-$(BUILD)/srcd_cuda: $(SRC) $(CU_OBJ)
-	$(CC) $(CFLAGS) -o $@ $(SRC) $(CU_OBJ) $(LDLIBS)
+$(BUILD)/srcd_cuda: $(CU_SRC) $(CU_OBJ)
+	$(NVCC) $(CFLAGS) -o $@ $(CU_SRC) $(CU_OBJ) $(LDLIBS) -lcudart
 
 $(BUILD)/cu/gpu_cuda.o: cu/gpu_cuda.cu | $(BUILD)/cu
+	@if [ -z "$(NVCC)" ]; then \
+	  echo "error: nvcc not found, cannot build the CUDA target."; \
+	  echo "  fix: install the CUDA toolkit (developer.nvidia.com/cuda-toolkit), or"; \
+	  echo "        point make at it:  make cuda NVCC=/usr/local/cuda/bin/nvcc"; \
+	  echo "  the CPU-only binary still builds with:  make"; exit 1; fi
 	$(NVCC) -O2 -c -o $@ $<
 
 $(BUILD)/cu: | $(BUILD)

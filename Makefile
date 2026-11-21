@@ -74,8 +74,12 @@ test: tests
 cuda: CFLAGS += -DHAVE_CUDA
 cuda: $(BUILD)/srcd_cuda
 
+# nvcc takes -O2 and -D but rejects host-only flags: forward those to the host compiler.
+CUFLAGS := $(subst -Wall,-Xcompiler -Wall,$(CFLAGS))
+CUFLAGS := $(subst -Wextra,-Xcompiler -Wextra,$(CUFLAGS))
+
 $(BUILD)/srcd_cuda: $(CU_SRC) $(CU_OBJ)
-	$(NVCC) $(CFLAGS) -o $@ $(CU_SRC) $(CU_OBJ) $(LDLIBS) -lcudart
+	$(NVCC) -o $@ $(CU_SRC) $(CU_OBJ) $(CUFLAGS) $(LDLIBS) -lcudart
 
 $(BUILD)/cu/gpu_cuda.o: cu/gpu_cuda.cu | $(BUILD)/cu
 	@if [ -z "$(NVCC)" ]; then \
